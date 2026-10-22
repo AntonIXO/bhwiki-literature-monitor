@@ -44,10 +44,15 @@ BHWIKI_REPO_URL=https://github.com/AntonIXO/BHWiki.git
 BHWIKI_GITHUB_REPO=AntonIXO/BHWiki
 BHWIKI_BASE_BRANCH=main
 
-# Option A: use Hermes-managed Codex OAuth (reads /root/.hermes/auth.json through `hermes chat`)
-BHWIKI_LLM_PROVIDER=hermes-codex
+# Option A: use the Hermes Codex OAuth access token directly (no hermes subprocess)
+BHWIKI_LLM_PROVIDER=codex-oauth
+BHWIKI_CODEX_AUTH_FILE=/root/.hermes/auth.json
+BHWIKI_LLM_MODEL=gpt-6.1-sol
 
-# Option B: use a separate OpenAI-compatible provider
+# Option B: use Hermes as an OAuth broker subprocess
+# BHWIKI_LLM_PROVIDER=hermes-codex
+
+# Option C: use a separate OpenAI-compatible provider
 # BHWIKI_LLM_PROVIDER=openai-compatible
 # BHWIKI_LLM_BASE_URL=https://provider.example/v1
 # BHWIKI_LLM_API_KEY=replace-me

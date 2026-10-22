@@ -36,15 +36,17 @@ const dryRun = args.has("--dry-run");
 const noLlm = args.has("--no-llm");
 const llmProvider = process.env.BHWIKI_LLM_PROVIDER ?? "openai-compatible";
 const llmBaseUrl = (process.env.BHWIKI_LLM_BASE_URL ?? "").replace(/\/$/, "");
+const codexBaseUrl = (process.env.BHWIKI_CODEX_BASE_URL ?? "https://chatgpt.com/backend-api/codex").replace(/\/$/, "");
+const codexAuthFile = process.env.BHWIKI_CODEX_AUTH_FILE ?? "/root/.hermes/auth.json";
 const llmApiKey = process.env.BHWIKI_LLM_API_KEY;
-const llmModel = process.env.BHWIKI_LLM_MODEL ?? "configured-model";
+const llmModel = process.env.BHWIKI_LLM_MODEL ?? (llmProvider === "codex-oauth" ? "gpt-6.1-sol" : "configured-model");
 const validTypes = new Set<SuggestionType>(["new-reference", "new-outcome", "new-effect", "new-claim", "new-caution", "ignore"]);
 
 if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) throw new Error("--since must be YYYY-MM-DD");
 if (!Number.isInteger(perQuery) || perQuery < 1 || perQuery > 100) throw new Error("--limit must be 1..100");
 if (!Number.isInteger(maxPapers) || maxPapers < 1 || maxPapers > 500) throw new Error("--max-papers must be 1..500");
 if (!Number.isInteger(maxSubstances) || maxSubstances < 0) throw new Error("--max-substances must be non-negative");
-if (!noLlm && llmProvider !== "hermes-codex" && !llmBaseUrl) throw new Error("BHWIKI_LLM_BASE_URL is required unless --no-llm or BHWIKI_LLM_PROVIDER=hermes-codex is explicit");
+if (!noLlm && !["hermes-codex", "codex-oauth"].includes(llmProvider) && !llmBaseUrl) throw new Error("BHWIKI_LLM_BASE_URL is required unless --no-llm, BHWIKI_LLM_PROVIDER=hermes-codex, or BHWIKI_LLM_PROVIDER=codex-oauth is explicit");
 
 async function shell(command: string, args: string[], cwd?: string): Promise<string> {
   const { stdout } = await exec(command, args, { cwd, maxBuffer: 16 * 1024 * 1024 });
@@ -129,6 +131,57 @@ function matchedTerms(target: WatchTarget, result: Record<string, unknown>): str
   return [...new Set([target.name, ...target.aliases, ...target.tags].filter((term) => term.length >= 2 && text.includes(term.toLocaleLowerCase())))];
 }
 
+async function callDirectCodex(prompt: string): Promise<string> {
+  const auth = JSON.parse(await readFile(codexAuthFile, "utf8")) as { credential_pool?: Record<string, Array<{ access_token?: string }>> };
+  const token = auth.credential_pool?.["openai-codex"]?.[0]?.access_token;
+  if (!token) throw new Error(`No Hermes Codex access token in ${codexAuthFile}`);
+  let authClaims: Record<string, unknown> = {};
+  try {
+    const part = token.split(".")[1];
+    authClaims = JSON.parse(Buffer.from(part, "base64url").toString("utf8"))["https://api.openai.com/auth"] ?? {};
+  } catch {
+    throw new Error("Hermes Codex access token is not a readable JWT");
+  }
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${token}`,
+    "content-type": "application/json",
+    accept: "text/event-stream",
+    "user-agent": "BHWikiLiteratureMonitor/0.1",
+    originator: "bhwiki-literature-monitor",
+  };
+  if (typeof authClaims.chatgpt_account_id === "string") headers["ChatGPT-Account-ID"] = authClaims.chatgpt_account_id;
+  const residency = authClaims.chatgpt_data_residency ?? authClaims.chatgpt_compute_residency;
+  if (typeof residency === "string" && residency) headers["x-openai-internal-codex-residency"] = residency;
+  const response = await fetch(`${codexBaseUrl}/responses`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: llmModel,
+      instructions: "Return only the requested JSON. Do not use tools. Do not add markdown fences.",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: prompt }] }],
+      store: false,
+      stream: true,
+    }),
+  });
+  const body = await response.text();
+  if (!response.ok) throw new Error(`Codex OAuth HTTP ${response.status}: ${body.slice(0, 500)}`);
+  const output: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.startsWith("data: ")) continue;
+    try {
+      const event = JSON.parse(line.slice(6)) as { type?: string; delta?: string; error?: { message?: string } };
+      if (event.type === "response.output_text.delta" && typeof event.delta === "string") output.push(event.delta);
+      if (event.type === "response.error") throw new Error(event.error?.message ?? "Codex response error");
+    } catch (error) {
+      if (error instanceof SyntaxError) continue;
+      throw error;
+    }
+  }
+  const content = output.join("").trim();
+  if (!content) throw new Error("Codex OAuth returned no output text");
+  return content;
+}
+
 async function callLlm(paper: LiteraturePaper): Promise<Array<{ substanceSlug: string; suggestionType: SuggestionType; payload: Record<string, unknown>; rationale: string; evidenceQuotes: string[]; confidence?: number }>> {
   const prompt = [
     "You are an evidence triage assistant for BHWiki.",
@@ -141,7 +194,9 @@ async function callLlm(paper: LiteraturePaper): Promise<Array<{ substanceSlug: s
     `Abstract: ${paper.abstract || "(no abstract)"}`,
   ].join("\n");
   let content: string;
-  if (llmProvider === "hermes-codex") {
+  if (llmProvider === "codex-oauth") {
+    content = await callDirectCodex(prompt);
+  } else if (llmProvider === "hermes-codex") {
     const raw = await shell("hermes", ["chat", "-q", prompt, "--provider", "openai-codex", "-Q"]);
     content = raw.replace(/\n?session_id:\s*[^\n]+\s*$/m, "").trim();
   } else {
@@ -189,7 +244,7 @@ async function writeRunOutput(papers: LiteraturePaper[], proposals: Array<{ id: 
       source: "europepmc",
       since,
       retrievedAt: new Date().toISOString(),
-      llm: noLlm ? null : { provider: llmProvider, model: llmProvider === "hermes-codex" ? "openai-codex-via-hermes" : llmModel },
+      llm: noLlm ? null : { provider: llmProvider, model: llmModel },
       papers: papers.map((paper) => ({ id: canonicalPaperId(paper), title: paper.title, url: paper.url, doi: paper.doi, pmid: paper.pmid, pmcid: paper.pmcid, publishedOn: paper.publishedOn, matchedSubstances: paper.matchedSubstances, matchedTerms: paper.matchedTerms, raw: paper.raw })),
       proposals: proposals.map(({ id, paper, substanceSlug, suggestionType, payload, rationale, evidenceQuotes, confidence }) => ({ id, paperId: canonicalPaperId(paper), substanceSlug, suggestionType, payload, rationale, evidenceQuotes, confidence })),
     };
