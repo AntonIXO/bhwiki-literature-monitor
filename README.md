@@ -43,10 +43,14 @@ BHWIKI_REPO_URL=https://github.com/AntonIXO/BHWiki.git
 BHWIKI_GITHUB_REPO=AntonIXO/BHWiki
 BHWIKI_BASE_BRANCH=main
 
-# OpenAI-compatible provider used for production triage. This is not Codex CLI auth.
-BHWIKI_LLM_BASE_URL=https://provider.example/v1
-BHWIKI_LLM_API_KEY=replace-me
-BHWIKI_LLM_MODEL=replace-me
+# Option A: use Hermes-managed Codex OAuth (reads /root/.hermes/auth.json through `hermes chat`)
+BHWIKI_LLM_PROVIDER=hermes-codex
+
+# Option B: use a separate OpenAI-compatible provider
+# BHWIKI_LLM_PROVIDER=openai-compatible
+# BHWIKI_LLM_BASE_URL=https://provider.example/v1
+# BHWIKI_LLM_API_KEY=replace-me
+# BHWIKI_LLM_MODEL=replace-me
 ```
 
 The worker uses the host's `gh` credential for the final `git push` and `gh pr create`. Keep that credential outside this repository and run the service under a dedicated account with access only to the BHWiki checkout and GitHub repository.

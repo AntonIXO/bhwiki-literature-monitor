@@ -33,6 +33,7 @@ const maxSubstances = Number(arg("max-substances", "0"));
 const onlySlug = arg("slug");
 const dryRun = args.has("--dry-run");
 const noLlm = args.has("--no-llm");
+const llmProvider = process.env.BHWIKI_LLM_PROVIDER ?? "openai-compatible";
 const llmBaseUrl = (process.env.BHWIKI_LLM_BASE_URL ?? "").replace(/\/$/, "");
 const llmApiKey = process.env.BHWIKI_LLM_API_KEY;
 const llmModel = process.env.BHWIKI_LLM_MODEL ?? "configured-model";
@@ -41,7 +42,7 @@ const validTypes = new Set<SuggestionType>(["new-reference", "new-outcome", "new
 if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) throw new Error("--since must be YYYY-MM-DD");
 if (!Number.isInteger(perQuery) || perQuery < 1 || perQuery > 100) throw new Error("--limit must be 1..100");
 if (!Number.isInteger(maxSubstances) || maxSubstances < 0) throw new Error("--max-substances must be non-negative");
-if (!noLlm && !llmBaseUrl) throw new Error("BHWIKI_LLM_BASE_URL is required unless --no-llm is explicit");
+if (!noLlm && llmProvider !== "hermes-codex" && !llmBaseUrl) throw new Error("BHWIKI_LLM_BASE_URL is required unless --no-llm or BHWIKI_LLM_PROVIDER=hermes-codex is explicit");
 
 async function shell(command: string, args: string[], cwd?: string): Promise<string> {
   const { stdout } = await exec(command, args, { cwd, maxBuffer: 16 * 1024 * 1024 });
@@ -137,15 +138,21 @@ async function callLlm(paper: LiteraturePaper): Promise<Array<{ substanceSlug: s
     `Title: ${paper.title}`,
     `Abstract: ${paper.abstract || "(no abstract)"}`,
   ].join("\n");
-  const response = await fetch(`${llmBaseUrl}/chat/completions`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(llmApiKey ? { authorization: `Bearer ${llmApiKey}` } : {}) },
-    body: JSON.stringify({ model: llmModel, temperature: 0, messages: [{ role: "user", content: prompt }], response_format: { type: "json_object" } }),
-  });
-  if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
-  const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-  const content = (body.choices?.[0]?.message?.content ?? "{}").replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-  const parsed = JSON.parse(content) as { suggestions?: unknown };
+  let content: string;
+  if (llmProvider === "hermes-codex") {
+    const raw = await shell("hermes", ["chat", "-q", prompt, "--provider", "openai-codex", "-Q"]);
+    content = raw.replace(/\n?session_id:\s*[^\n]+\s*$/m, "").trim();
+  } else {
+    const response = await fetch(`${llmBaseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(llmApiKey ? { authorization: `Bearer ${llmApiKey}` } : {}) },
+      body: JSON.stringify({ model: llmModel, temperature: 0, messages: [{ role: "user", content: prompt }], response_format: { type: "json_object" } }),
+    });
+    if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
+    const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    content = body.choices?.[0]?.message?.content ?? "{}";
+  }
+  const parsed = JSON.parse(content.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim()) as { suggestions?: unknown };
   if (!Array.isArray(parsed.suggestions)) return [];
   return parsed.suggestions.flatMap((raw) => {
     if (!raw || typeof raw !== "object") return [];
@@ -180,7 +187,7 @@ async function writeRunOutput(papers: LiteraturePaper[], proposals: Array<{ id: 
       source: "europepmc",
       since,
       retrievedAt: new Date().toISOString(),
-      llm: noLlm ? null : { provider: "openai-compatible", model: llmModel },
+      llm: noLlm ? null : { provider: llmProvider, model: llmProvider === "hermes-codex" ? "openai-codex-via-hermes" : llmModel },
       papers: papers.map((paper) => ({ id: canonicalPaperId(paper), title: paper.title, url: paper.url, doi: paper.doi, pmid: paper.pmid, pmcid: paper.pmcid, publishedOn: paper.publishedOn, matchedSubstances: paper.matchedSubstances, matchedTerms: paper.matchedTerms, raw: paper.raw })),
       proposals: proposals.map(({ id, paper, substanceSlug, suggestionType, payload, rationale, evidenceQuotes, confidence }) => ({ id, paperId: canonicalPaperId(paper), substanceSlug, suggestionType, payload, rationale, evidenceQuotes, confidence })),
     };
