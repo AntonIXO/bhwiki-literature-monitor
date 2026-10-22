@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily BHWiki literature PR worker
+
+[Timer]
+OnCalendar=*-*-* 05:10:00 UTC
+RandomizedDelaySec=30m
+Persistent=true
+Unit=bhwiki-literature-monitor.service
+
+[Install]
+WantedBy=timers.target

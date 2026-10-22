@@ -1,0 +1,20 @@
+[Unit]
+Description=BHWiki literature monitor and PR worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/bhwiki-literature-monitor
+EnvironmentFile=/etc/bhwiki-literature-monitor.env
+ExecStart=/usr/sbin/bun run start -- --limit=100
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/bhwiki-literature-monitor
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
