@@ -59,6 +59,7 @@ test("renders a review proposal and never an article mutation", () => {
   });
   assert.match(output, /editorial proposal/);
   assert.match(output, /Human review/);
+  assert.match(output, /Caffeine reduced total sleep time by 20 minutes/);
   assert.match(output, /total sleep time/);
   assert.doesNotMatch(output, /content\/substances/);
 });
