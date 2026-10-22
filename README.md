@@ -33,6 +33,7 @@ Useful flags:
 - `--max-substances=N` — bound a run during testing.
 - `--since=YYYY-MM-DD` — override the rolling overlap start date.
 - `--limit=N` — Europe PMC results per substance.
+- `--max-papers=N` — cap the number of deduplicated papers sent to the LLM in one run.
 
 ## Required environment
 

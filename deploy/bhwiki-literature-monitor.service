@@ -8,7 +8,7 @@ Type=oneshot
 User=root
 WorkingDirectory=/opt/bhwiki-literature-monitor
 EnvironmentFile=/etc/bhwiki-literature-monitor.env
-ExecStart=/usr/sbin/bun run start -- --limit=100
+ExecStart=/usr/sbin/bun run start -- --limit=10 --max-papers=50
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

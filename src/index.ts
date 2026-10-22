@@ -29,6 +29,7 @@ const args = new Set(process.argv.slice(2));
 const arg = (name: string, fallback?: string) => process.argv.find((v) => v.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const since = arg("since", new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10))!;
 const perQuery = Number(arg("limit", "10"));
+const maxPapers = Number(arg("max-papers", "50"));
 const maxSubstances = Number(arg("max-substances", "0"));
 const onlySlug = arg("slug");
 const dryRun = args.has("--dry-run");
@@ -41,6 +42,7 @@ const validTypes = new Set<SuggestionType>(["new-reference", "new-outcome", "new
 
 if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) throw new Error("--since must be YYYY-MM-DD");
 if (!Number.isInteger(perQuery) || perQuery < 1 || perQuery > 100) throw new Error("--limit must be 1..100");
+if (!Number.isInteger(maxPapers) || maxPapers < 1 || maxPapers > 500) throw new Error("--max-papers must be 1..500");
 if (!Number.isInteger(maxSubstances) || maxSubstances < 0) throw new Error("--max-substances must be non-negative");
 if (!noLlm && llmProvider !== "hermes-codex" && !llmBaseUrl) throw new Error("BHWIKI_LLM_BASE_URL is required unless --no-llm or BHWIKI_LLM_PROVIDER=hermes-codex is explicit");
 
@@ -231,7 +233,7 @@ async function main(): Promise<void> {
       }
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
-    const papers = deduplicatePapers(fetched);
+    const papers = deduplicatePapers(fetched).slice(0, maxPapers);
     const proposals: Array<{ id: string; paper: LiteraturePaper; substanceSlug: string; suggestionType: SuggestionType; payload: Record<string, unknown>; rationale: string; evidenceQuotes: string[]; confidence?: number }> = [];
     if (!noLlm) {
       for (const paper of papers) {
