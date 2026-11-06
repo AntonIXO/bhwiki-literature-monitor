@@ -63,7 +63,9 @@ The worker uses the host's `gh` credential for the final `git push` and `gh pr c
 
 ## Provenance and safety
 
-Every proposal retains the Europe PMC URL, PMID/DOI/PMCID when present, matched BHWiki substance/tags, retrieval date, raw provider result, model name, rationale, confidence and exact abstract quotes. Quotes are mechanically required to be contiguous spans from the abstract. Missing full text remains missing.
+Every proposal retains the Europe PMC URL, PMID/DOI/PMCID when present, matched BHWiki substance/tags, retrieval date, the provider record, model name, rationale, confidence and exact abstract quotes. Quotes are mechanically required to be contiguous spans from the abstract. Missing full text remains missing.
+
+The manifest is committed to the public BHWiki repository, so its `raw` field keeps only an allowlist of the Europe PMC record (`manifestSourceRecord` in `src/model.ts`): identifiers, versions, bibliography, abstract, publication status and types, grants, corrections and access/rights. Author affiliations (which include email addresses), ORCID lists and investigator lists are dropped.
 
 A free-to-read URL is not assumed to grant redistribution rights. The proposal asks the reviewer to inspect the canonical article version, correction/retraction state, study context, limitations, funding/conflicts and rights before editing Markdown.
 

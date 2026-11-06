@@ -5,6 +5,7 @@ import {
   canonicalPaperId,
   deduplicatePapers,
   extractQuotedEvidence,
+  manifestSourceRecord,
   renderProposal,
   type LiteraturePaper,
 } from "./model.js";
@@ -62,4 +63,24 @@ test("renders a review proposal and never an article mutation", () => {
   assert.match(output, /Caffeine reduced total sleep time by 20 minutes/);
   assert.match(output, /total sleep time/);
   assert.doesNotMatch(output, /content\/substances/);
+});
+
+test("manifest source record keeps review fields and drops author contact data", () => {
+  const review = {
+    pmid: "42880479",
+    doi: "10.1016/j.fct.2026.116460",
+    authorString: "Santillo MF, Sprando RL, Yourick JJ.",
+    abstractText: "Methylliberine and theacrine were profiled.",
+    publicationStatus: "aheadofprint",
+    pubTypeList: { pubType: ["Journal Article"] },
+    grantsList: { grant: [{ agency: "US Food and Drug Administration", orderIn: 0 }] },
+  };
+  const record = manifestSourceRecord({
+    ...review,
+    affiliation: "Division of Toxicology, FDA. Electronic address: michael.santillo@fda.hhs.gov.",
+    authorList: { author: [{ fullName: "Santillo MF", authorAffiliationDetailsList: { authorAffiliation: [{ affiliation: "FDA. Electronic address: michael.santillo@fda.hhs.gov." }] } }] },
+    authorIdList: { authorId: [{ type: "ORCID", value: "0000-0002-1825-0097" }] },
+    investigatorList: { investigator: [{ fullName: "Doe J" }] },
+  });
+  assert.deepEqual(record, review);
 });

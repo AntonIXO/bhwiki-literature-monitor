@@ -10,6 +10,7 @@ import {
   canonicalPaperId,
   deduplicatePapers,
   extractQuotedEvidence,
+  manifestSourceRecord,
   parseEuropePmcResult,
   renderProposal,
   type LiteraturePaper,
@@ -245,7 +246,7 @@ async function writeRunOutput(papers: LiteraturePaper[], proposals: Array<{ id: 
       since,
       retrievedAt: new Date().toISOString(),
       llm: noLlm ? null : { provider: llmProvider, model: llmModel },
-      papers: papers.map((paper) => ({ id: canonicalPaperId(paper), title: paper.title, url: paper.url, doi: paper.doi, pmid: paper.pmid, pmcid: paper.pmcid, publishedOn: paper.publishedOn, matchedSubstances: paper.matchedSubstances, matchedTerms: paper.matchedTerms, raw: paper.raw })),
+      papers: papers.map((paper) => ({ id: canonicalPaperId(paper), title: paper.title, url: paper.url, doi: paper.doi, pmid: paper.pmid, pmcid: paper.pmcid, publishedOn: paper.publishedOn, matchedSubstances: paper.matchedSubstances, matchedTerms: paper.matchedTerms, raw: manifestSourceRecord(paper.raw) })),
       proposals: proposals.map(({ id, paper, substanceSlug, suggestionType, payload, rationale, evidenceQuotes, confidence }) => ({ id, paperId: canonicalPaperId(paper), substanceSlug, suggestionType, payload, rationale, evidenceQuotes, confidence })),
     };
     await writeFile(path.join(base, `manifest-${runId}.json`), `${JSON.stringify(manifest, null, 2)}\n`);

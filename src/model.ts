@@ -148,3 +148,21 @@ export function parseEuropePmcResult(result: Record<string, unknown>, target: Wa
   paper.id = canonicalPaperId(paper);
   return paper;
 }
+
+/**
+ * Europe PMC fields the committed manifest keeps for reviewers: identifiers, versions, bibliography, abstract,
+ * publication status and types, grants, corrections and access/rights. Person-level fields (`affiliation` and
+ * `authorList`, which carry author emails, plus `authorIdList` and `investigatorList`) stay out of the public repo.
+ */
+const MANIFEST_SOURCE_FIELDS = [
+  "id", "source", "pmid", "pmcid", "doi", "manuscriptId", "versionNumber", "versionList", "fullTextIdList",
+  "title", "authorString", "journalInfo", "bookOrReportDetails", "pubYear", "pageInfo", "language", "pubModel",
+  "publicationStatus", "pubTypeList", "abstractText", "keywordList", "meshHeadingList", "chemicalList",
+  "grantsList", "commentCorrectionList",
+  "isOpenAccess", "inEPMC", "inPMC", "hasPDF", "license", "fullTextUrlList",
+  "firstPublicationDate", "electronicPublicationDate", "dateOfRevision", "firstIndexDate",
+];
+
+export function manifestSourceRecord(raw: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(MANIFEST_SOURCE_FIELDS.filter((field) => field in raw).map((field) => [field, raw[field]]));
+}
