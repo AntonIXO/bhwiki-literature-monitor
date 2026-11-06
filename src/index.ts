@@ -11,6 +11,7 @@ import {
   deduplicatePapers,
   extractQuotedEvidence,
   manifestSourceRecord,
+  matchWatchTerms,
   parseEuropePmcResult,
   renderProposal,
   type LiteraturePaper,
@@ -125,11 +126,6 @@ async function searchEuropePmc(query: string): Promise<Record<string, unknown>[]
   if (!response.ok) throw new Error(`Europe PMC HTTP ${response.status}`);
   const body = await response.json() as { resultList?: { result?: Record<string, unknown>[] } };
   return body.resultList?.result ?? [];
-}
-
-function matchedTerms(target: WatchTarget, result: Record<string, unknown>): string[] {
-  const text = `${result.title ?? ""} ${result.abstractText ?? result.abstract ?? ""}`.toLocaleLowerCase();
-  return [...new Set([target.name, ...target.aliases, ...target.tags].filter((term) => term.length >= 2 && text.includes(term.toLocaleLowerCase())))];
 }
 
 async function callDirectCodex(prompt: string): Promise<string> {
@@ -284,7 +280,7 @@ async function main(): Promise<void> {
     for (const target of targets) {
       const results = await searchEuropePmc(buildEuropePmcQuery(target, since));
       for (const result of results) {
-        const terms = matchedTerms(target, result);
+        const terms = matchWatchTerms(target, result);
         if (terms.length) fetched.push(parseEuropePmcResult(result, target, terms));
       }
       await new Promise((resolve) => setTimeout(resolve, 120));

@@ -19,7 +19,16 @@ export type LiteraturePaper = {
 export type SuggestionType = "new-reference" | "new-outcome" | "new-effect" | "new-claim" | "new-caution" | "ignore";
 
 const compact = (value: string) => value.replace(/\s+/g, " ").trim();
-const unique = (values: string[]) => [...new Set(values.map(compact).filter((v) => v.length >= 2))];
+/** Drop short terms and case-insensitive repeats, keeping the first casing seen. */
+function unique(values: string[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const value of values.map(compact)) {
+    const key = value.toLocaleLowerCase();
+    if (value.length >= 2 && !byKey.has(key)) byKey.set(key, value);
+  }
+  return [...byKey.values()];
+}
+const text = (value: unknown) => (typeof value === "string" && value.trim() ? compact(value) : null);
 const quoted = (value: string) => `"${compact(value).toLowerCase().replaceAll('"', '\\"')}"`;
 
 export function buildEuropePmcQuery(target: WatchTarget, since: string): string {
@@ -56,7 +65,7 @@ export function deduplicatePapers(papers: LiteraturePaper[]): LiteraturePaper[] 
       pmcid: current.pmcid ?? paper.pmcid,
       authors: [...new Set([...current.authors, ...paper.authors])],
       matchedSubstances: [...new Set([...current.matchedSubstances, ...paper.matchedSubstances])],
-      matchedTerms: [...new Set([...current.matchedTerms, ...paper.matchedTerms])],
+      matchedTerms: unique([...current.matchedTerms, ...paper.matchedTerms]),
       raw: { ...current.raw, ...paper.raw },
     } : { ...paper, id: canonicalPaperId(paper) };
     for (const key of [...identityKeys(paper), ...identityKeys(merged)]) index.set(key, merged);
@@ -67,6 +76,12 @@ export function deduplicatePapers(papers: LiteraturePaper[]): LiteraturePaper[] 
 export function extractQuotedEvidence(quotes: string[], abstract: string): string[] {
   const source = compact(abstract).toLocaleLowerCase();
   return [...new Set(quotes.map(compact).filter((quote) => quote.length >= 12 && source.includes(quote.toLocaleLowerCase())))];
+}
+
+/** Watch terms (name, aliases, tag ids and labels) that occur in a record's title or abstract. */
+export function matchWatchTerms(target: WatchTarget, result: Record<string, unknown>): string[] {
+  const text = compact(`${result.title ?? ""} ${result.abstractText ?? result.abstract ?? ""}`).toLocaleLowerCase();
+  return unique([target.name, ...target.aliases, ...target.tags]).filter((term) => text.includes(term.toLocaleLowerCase()));
 }
 
 export function renderProposal(input: {
@@ -139,14 +154,20 @@ export function parseEuropePmcResult(result: Record<string, unknown>, target: Wa
     pmid,
     pmcid,
     publishedOn: typeof result.firstPublicationDate === "string" ? result.firstPublicationDate : null,
-    journal: typeof result.journalTitle === "string" ? result.journalTitle : null,
-    authors: typeof result.authorString === "string" ? result.authorString.split(",").map(compact).filter(Boolean) : [],
+    journal: europePmcJournal(result),
+    authors: typeof result.authorString === "string" ? result.authorString.replace(/\.\s*$/, "").split(",").map(compact).filter(Boolean) : [],
     matchedSubstances: [target.slug],
     matchedTerms,
     raw: result,
   };
   paper.id = canonicalPaperId(paper);
   return paper;
+}
+
+/** `resultType=lite` exposes `journalTitle`; `resultType=core` (what the worker requests) nests it under `journalInfo.journal`. */
+function europePmcJournal(result: Record<string, unknown>): string | null {
+  const journal = (result.journalInfo as { journal?: Record<string, unknown> } | null | undefined)?.journal ?? {};
+  return text(result.journalTitle) ?? text(journal.medlineAbbreviation) ?? text(journal.isoabbreviation) ?? text(journal.title);
 }
 
 /**
