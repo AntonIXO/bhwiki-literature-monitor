@@ -10,6 +10,8 @@ import {
   canonicalPaperId,
   deduplicatePapers,
   extractQuotedEvidence,
+  manifestSourceRecord,
+  matchWatchTerms,
   parseEuropePmcResult,
   renderProposal,
   type LiteraturePaper,
@@ -126,11 +128,6 @@ async function searchEuropePmc(query: string): Promise<Record<string, unknown>[]
   return body.resultList?.result ?? [];
 }
 
-function matchedTerms(target: WatchTarget, result: Record<string, unknown>): string[] {
-  const text = `${result.title ?? ""} ${result.abstractText ?? result.abstract ?? ""}`.toLocaleLowerCase();
-  return [...new Set([target.name, ...target.aliases, ...target.tags].filter((term) => term.length >= 2 && text.includes(term.toLocaleLowerCase())))];
-}
-
 async function callDirectCodex(prompt: string): Promise<string> {
   const auth = JSON.parse(await readFile(codexAuthFile, "utf8")) as { credential_pool?: Record<string, Array<{ access_token?: string }>> };
   const token = auth.credential_pool?.["openai-codex"]?.[0]?.access_token;
@@ -245,7 +242,7 @@ async function writeRunOutput(papers: LiteraturePaper[], proposals: Array<{ id: 
       since,
       retrievedAt: new Date().toISOString(),
       llm: noLlm ? null : { provider: llmProvider, model: llmModel },
-      papers: papers.map((paper) => ({ id: canonicalPaperId(paper), title: paper.title, url: paper.url, doi: paper.doi, pmid: paper.pmid, pmcid: paper.pmcid, publishedOn: paper.publishedOn, matchedSubstances: paper.matchedSubstances, matchedTerms: paper.matchedTerms, raw: paper.raw })),
+      papers: papers.map((paper) => ({ id: canonicalPaperId(paper), title: paper.title, url: paper.url, doi: paper.doi, pmid: paper.pmid, pmcid: paper.pmcid, publishedOn: paper.publishedOn, matchedSubstances: paper.matchedSubstances, matchedTerms: paper.matchedTerms, raw: manifestSourceRecord(paper.raw) })),
       proposals: proposals.map(({ id, paper, substanceSlug, suggestionType, payload, rationale, evidenceQuotes, confidence }) => ({ id, paperId: canonicalPaperId(paper), substanceSlug, suggestionType, payload, rationale, evidenceQuotes, confidence })),
     };
     await writeFile(path.join(base, `manifest-${runId}.json`), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -283,7 +280,7 @@ async function main(): Promise<void> {
     for (const target of targets) {
       const results = await searchEuropePmc(buildEuropePmcQuery(target, since));
       for (const result of results) {
-        const terms = matchedTerms(target, result);
+        const terms = matchWatchTerms(target, result);
         if (terms.length) fetched.push(parseEuropePmcResult(result, target, terms));
       }
       await new Promise((resolve) => setTimeout(resolve, 120));

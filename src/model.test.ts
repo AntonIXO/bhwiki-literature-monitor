@@ -5,6 +5,9 @@ import {
   canonicalPaperId,
   deduplicatePapers,
   extractQuotedEvidence,
+  manifestSourceRecord,
+  matchWatchTerms,
+  parseEuropePmcResult,
   renderProposal,
   type LiteraturePaper,
 } from "./model.js";
@@ -62,4 +65,60 @@ test("renders a review proposal and never an article mutation", () => {
   assert.match(output, /Caffeine reduced total sleep time by 20 minutes/);
   assert.match(output, /total sleep time/);
   assert.doesNotMatch(output, /content\/substances/);
+});
+
+test("manifest source record keeps review fields and drops author contact data", () => {
+  const review = {
+    pmid: "42880479",
+    doi: "10.1016/j.fct.2026.116460",
+    authorString: "Santillo MF, Sprando RL, Yourick JJ.",
+    abstractText: "Methylliberine and theacrine were profiled.",
+    publicationStatus: "aheadofprint",
+    pubTypeList: { pubType: ["Journal Article"] },
+    grantsList: { grant: [{ agency: "US Food and Drug Administration", orderIn: 0 }] },
+  };
+  const record = manifestSourceRecord({
+    ...review,
+    affiliation: "Division of Toxicology, FDA. Electronic address: michael.santillo@fda.hhs.gov.",
+    authorList: { author: [{ fullName: "Santillo MF", authorAffiliationDetailsList: { authorAffiliation: [{ affiliation: "FDA. Electronic address: michael.santillo@fda.hhs.gov." }] } }] },
+    authorIdList: { authorId: [{ type: "ORCID", value: "0000-0002-1825-0097" }] },
+    investigatorList: { investigator: [{ fullName: "Doe J" }] },
+  });
+  assert.deepEqual(record, review);
+});
+
+test("parses a Europe PMC core record's journal and author names", () => {
+  const parsed = parseEuropePmcResult(
+    {
+      pmid: "42880479",
+      title: "Evaluating the biological effects of caffeine-related compounds methylliberine and theacrine.",
+      authorString: "Santillo MF, Sprando RL, Yourick JJ.",
+      journalInfo: {
+        journal: {
+          title: "Food and chemical toxicology : an international journal published for the British Industrial Biological Research Association",
+          medlineAbbreviation: "Food Chem Toxicol",
+          isoabbreviation: "Food Chem Toxicol",
+        },
+      },
+      abstractText: "Methylliberine and theacrine were profiled.",
+      firstPublicationDate: "2026-10-15",
+    },
+    { slug: "caffeine", name: "Caffeine", aliases: [], tags: [] },
+    ["Caffeine"],
+  );
+  assert.equal(parsed.journal, "Food Chem Toxicol");
+  assert.deepEqual(parsed.authors, ["Santillo MF", "Sprando RL", "Yourick JJ"]);
+});
+
+test("matches watch terms once regardless of casing", () => {
+  const terms = matchWatchTerms(
+    { slug: "caffeine", name: "Caffeine", aliases: ["CYP1A2"], tags: ["stimulant", "Stimulant", "cyp1a2", "CYP1A2"] },
+    { title: "Caffeine as a stimulant", abstractText: "CYP1A2 metabolises caffeine." },
+  );
+  assert.deepEqual(terms, ["Caffeine", "CYP1A2", "stimulant"]);
+});
+
+test("merging duplicate papers keeps one matched term per case-insensitive value", () => {
+  const result = deduplicatePapers([paper({ matchedTerms: ["Caffeine"] }), paper({ id: "doi:10.1000/example", pmid: null, matchedTerms: ["caffeine", "sleep"] })]);
+  assert.deepEqual(result[0].matchedTerms, ["Caffeine", "sleep"]);
 });
